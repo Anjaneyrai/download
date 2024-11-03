@@ -1,0 +1,187 @@
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from typing import Tuple, Dict
+import warnings
+warnings.filterwarnings('ignore')
+
+class SignalAnalyzer:
+    def __init__(self):
+        self.insample_returns = None
+        self.insample_signals = None
+        self.outsample_returns = None
+        self.outsample_signals = None
+        self.beta = None
+        self.performance_metrics = None
+        
+    def load_data(
+        self,
+        insample_returns_path: str,
+        insample_signals_path: str,
+        outsample_returns_path: str,
+        outsample_signals_path: str
+    ) -> None:
+        """Load and process data from Excel files"""
+        
+        def process_excel(path: str) -> pd.DataFrame:
+            df = pd.read_excel(path)
+            df.set_index('Day', inplace=True)
+            df.sort_index(inplace=True)
+            return df
+        
+        # Load all files
+        print("Loading data files...")
+        self.insample_returns_df = process_excel(insample_returns_path)
+        self.insample_signals_df = process_excel(insample_signals_path)
+        self.outsample_returns_df = process_excel(outsample_returns_path)
+        self.outsample_signals_df = process_excel(outsample_signals_path)
+        
+        # Convert to numpy arrays
+        self.insample_returns = self.insample_returns_df.values
+        self.insample_signals = self.insample_signals_df.values
+        self.outsample_returns = self.outsample_returns_df.values
+        self.outsample_signals = self.outsample_signals_df.values
+        
+        # Store column names for later use
+        self.asset_names = self.insample_returns_df.columns
+        self.signal_names = self.insample_signals_df.columns
+        
+        self._validate_data()
+        
+    def _validate_data(self) -> None:
+        """Validate loaded data"""
+        print("\nValidating data...")
+        
+        # Check shapes
+        print("Data Shapes:")
+        print(f"Insample Returns: {self.insample_returns.shape}")
+        print(f"Insample Signals: {self.insample_signals.shape}")
+        print(f"Outsample Returns: {self.outsample_returns.shape}")
+        print(f"Outsample Signals: {self.outsample_signals.shape}")
+        
+        # Check for missing values
+        if (np.isnan(self.insample_returns).any() or 
+            np.isnan(self.insample_signals).any() or
+            np.isnan(self.outsample_returns).any() or
+            np.isnan(self.outsample_signals).any()):
+            raise ValueError("Missing values detected in the data")
+            
+    def calculate_betas(self) -> None:
+        """Calculate beta coefficients using OLS regression"""
+        print("\nCalculating beta coefficients...")
+        
+        self.beta = np.zeros((self.insample_signals.shape[1], self.insample_returns.shape[1]))
+        r_squared = np.zeros(self.insample_returns.shape[1])
+        
+        for asset in range(self.insample_returns.shape[1]):
+            model = LinearRegression(fit_intercept=False)
+            model.fit(self.insample_signals, self.insample_returns[:, asset])
+            self.beta[:, asset] = model.coef_
+            r_squared[asset] = model.score(self.insample_signals, self.insample_returns[:, asset])
+            
+        # Store R-squared values
+        self.r_squared = pd.Series(r_squared, index=self.asset_names)
+        print(f"Average R-squared across assets: {np.mean(r_squared):.4f}")
+        
+    def calculate_portfolio_weights(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Calculate portfolio weights using beta and signals"""
+        if self.beta is None:
+            raise ValueError("Must calculate betas before portfolio weights")
+            
+        # Calculate predicted returns
+        predicted_returns = self.outsample_signals @ self.beta
+        
+        # Convert to weights using softmax
+        weights = np.exp(predicted_returns)
+        weights = weights / weights.sum(axis=1, keepdims=True)
+        
+        return weights, predicted_returns
+        
+    def calculate_performance_metrics(self) -> Dict:
+        """Calculate performance metrics including Sharpe ratio"""
+        print("\nCalculating performance metrics...")
+        
+        # Calculate weights and get portfolio returns
+        weights, predicted_returns = self.calculate_portfolio_weights()
+        portfolio_returns = np.sum(weights * self.outsample_returns, axis=1)
+        
+        # Calculate various metrics
+        annual_factor = np.sqrt(252)  # Annualization factor for daily data
+        
+        self.performance_metrics = {
+            'sharpe_ratio': annual_factor * np.mean(portfolio_returns) / np.std(portfolio_returns),
+            'annual_return': np.mean(portfolio_returns) * 252,
+            'annual_volatility': np.std(portfolio_returns) * annual_factor,
+            'max_drawdown': self._calculate_max_drawdown(portfolio_returns),
+            'hit_ratio': np.mean(portfolio_returns > 0),
+            'avg_position': np.mean(np.abs(weights)),
+            'turnover': np.mean(np.abs(np.diff(weights, axis=0)).sum(axis=1))
+        }
+        
+        return self.performance_metrics
+    
+    def _calculate_max_drawdown(self, returns: np.ndarray) -> float:
+        """Calculate maximum drawdown from returns"""
+        cumulative = np.cumprod(1 + returns)
+        running_max = np.maximum.accumulate(cumulative)
+        drawdown = cumulative / running_max - 1
+        return np.min(drawdown)
+    
+    def generate_report(self) -> None:
+        """Generate comprehensive analysis report"""
+        if self.performance_metrics is None:
+            self.calculate_performance_metrics()
+            
+        print("\n=== Performance Report ===")
+        print(f"Sharpe Ratio: {self.performance_metrics['sharpe_ratio']:.2f}")
+        print(f"Annual Return: {self.performance_metrics['annual_return']:.2%}")
+        print(f"Annual Volatility: {self.performance_metrics['annual_volatility']:.2%}")
+        print(f"Maximum Drawdown: {self.performance_metrics['max_drawdown']:.2%}")
+        print(f"Hit Ratio: {self.performance_metrics['hit_ratio']:.2%}")
+        print(f"Average Position Size: {self.performance_metrics['avg_position']:.2%}")
+        print(f"Daily Turnover: {self.performance_metrics['turnover']:.2%}")
+        
+        # Print top and bottom assets by R-squared
+        print("\nTop 5 Assets by R-squared:")
+        print(self.r_squared.sort_values(ascending=False).head())
+        print("\nBottom 5 Assets by R-squared:")
+        print(self.r_squared.sort_values(ascending=False).tail())
+
+# Example usage:
+if __name__ == "__main__":
+    # File paths
+    INSAMPLE_RETURNS_FILE = "insample_returns.xlsx"
+    INSAMPLE_SIGNALS_FILE = "insample_signals.xlsx"
+    OUTSAMPLE_RETURNS_FILE = "outsample_returns.xlsx"
+    OUTSAMPLE_SIGNALS_FILE = "outsample_signals.xlsx"
+    
+    # Create analyzer instance
+    analyzer = SignalAnalyzer()
+    
+    # Load data
+    analyzer.load_data(
+        INSAMPLE_RETURNS_FILE,
+        INSAMPLE_SIGNALS_FILE,
+        OUTSAMPLE_RETURNS_FILE,
+        OUTSAMPLE_SIGNALS_FILE
+    )
+    
+    # Run analysis
+    analyzer.calculate_betas()
+    analyzer.generate_report()
+    
+    # Access results
+    metrics = analyzer.performance_metrics
+    beta = analyzer.beta
+    
+    # Optional: Save results to Excel
+    results_df = pd.DataFrame(metrics, index=[0])
+    results_df.to_excel("analysis_results.xlsx")
+    
+    # Optional: Save beta coefficients
+    beta_df = pd.DataFrame(
+        analyzer.beta,
+        index=analyzer.signal_names,
+        columns=analyzer.asset_names
+    )
+    beta_df.to_excel("beta_coefficients.xlsx")
