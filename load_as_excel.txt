@@ -1,0 +1,102 @@
+import pandas as pd
+import numpy as np
+from typing import Tuple
+
+def load_and_process_data(
+    insample_returns_path: str,
+    insample_signals_path: str,
+    outsample_returns_path: str,
+    outsample_signals_path: str
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load data from Excel files and process into numpy arrays.
+    
+    Excel format expected:
+    - First column: 'Day'
+    - For returns: columns are asset names
+    - For signals: columns are signal names
+    
+    Returns:
+    - Tuple of numpy arrays: (insample_returns, insample_signals, 
+                             outsample_signals, outsample_returns)
+    """
+    
+    def process_excel(path: str) -> pd.DataFrame:
+        """Helper function to read and process each Excel file"""
+        # Read Excel file, using first row as headers
+        df = pd.read_excel(path)
+        
+        # Set Day column as index
+        df.set_index('Day', inplace=True)
+        
+        # Sort index to ensure data alignment
+        df.sort_index(inplace=True)
+        
+        return df
+
+    # Load all files
+    insample_returns_df = process_excel(insample_returns_path)
+    insample_signals_df = process_excel(insample_signals_path)
+    outsample_returns_df = process_excel(outsample_returns_path)
+    outsample_signals_df = process_excel(outsample_signals_path)
+    
+    # Print basic information about the data
+    print("\nData Summary:")
+    print(f"Insample Returns Shape: {insample_returns_df.shape}")
+    print(f"Insample Signals Shape: {insample_signals_df.shape}")
+    print(f"Outsample Returns Shape: {outsample_returns_df.shape}")
+    print(f"Outsample Signals Shape: {outsample_signals_df.shape}")
+    
+    # Verify data alignment
+    print("\nDate Ranges:")
+    print(f"Insample Returns: {insample_returns_df.index.min()} to {insample_returns_df.index.max()}")
+    print(f"Insample Signals: {insample_signals_df.index.min()} to {insample_signals_df.index.max()}")
+    print(f"Outsample Returns: {outsample_returns_df.index.min()} to {outsample_returns_df.index.max()}")
+    print(f"Outsample Signals: {outsample_signals_df.index.min()} to {outsample_signals_df.index.max()}")
+    
+    # Convert to numpy arrays
+    insample_returns = insample_returns_df.values
+    insample_signals = insample_signals_df.values
+    outsample_returns = outsample_returns_df.values
+    outsample_signals = outsample_signals_df.values
+    
+    return (insample_returns, insample_signals, 
+            outsample_signals, outsample_returns)
+
+# Example usage:
+if __name__ == "__main__":
+    # Define file paths
+    INSAMPLE_RETURNS_FILE = "insample_returns.xlsx"
+    INSAMPLE_SIGNALS_FILE = "insample_signals.xlsx"
+    OUTSAMPLE_RETURNS_FILE = "outsample_returns.xlsx"
+    OUTSAMPLE_SIGNALS_FILE = "outsample_signals.xlsx"
+    
+    # Load and process the data
+    (insample_returns, insample_signals, 
+     outsample_signals, outsample_returns) = load_and_process_data(
+        INSAMPLE_RETURNS_FILE,
+        INSAMPLE_SIGNALS_FILE,
+        OUTSAMPLE_RETURNS_FILE,
+        OUTSAMPLE_SIGNALS_FILE
+    )
+    
+    # Print some additional checks
+    print("\nArray Shapes:")
+    print(f"Insample Returns: {insample_returns.shape}")  # Should be (13000, 20)
+    print(f"Insample Signals: {insample_signals.shape}")  # Should be (13000, 100)
+    print(f"Outsample Returns: {outsample_returns.shape}")  # Should be (13000, 20)
+    print(f"Outsample Signals: {outsample_signals.shape}")  # Should be (13000, 100)
+    
+    # Basic data validation
+    print("\nData Validation:")
+    print(f"Any NaN in Insample Returns: {np.isnan(insample_returns).any()}")
+    print(f"Any NaN in Insample Signals: {np.isnan(insample_signals).any()}")
+    print(f"Any NaN in Outsample Returns: {np.isnan(outsample_returns).any()}")
+    print(f"Any NaN in Outsample Signals: {np.isnan(outsample_signals).any()}")
+    
+    # Sample of data
+    print("\nSample of Insample Returns (first 5 days, first 3 assets):")
+    print(insample_returns[:5, :3])
+    
+    print("\nSample of Insample Signals (first 5 days, first 3 signals):")
+    print(insample_signals[:5, :3])
