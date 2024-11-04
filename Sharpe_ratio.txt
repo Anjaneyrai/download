@@ -65,7 +65,30 @@ class SignalAnalyzer:
             np.isnan(self.outsample_returns).any() or
             np.isnan(self.outsample_signals).any()):
             raise ValueError("Missing values detected in the data")
-            
+    from sklearn.linear_model import ElasticNet
+
+    def calculate_betas_elastic_net(self, alpha: float = 0.1, l1_ratio: float = 0.5) -> None:
+        """Calculate beta coefficients using Elastic Net Regression"""
+        print("\nCalculating beta coefficients using Elastic Net Regression...")
+
+        self.beta = np.zeros((self.insample_signals.shape[1], self.insample_returns.shape[1]))
+        r_squared = np.zeros(self.insample_returns.shape[1])
+
+        for asset in range(self.insample_returns.shape[1]):
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=False)
+            model.fit(self.insample_signals, self.insample_returns[:, asset])
+            self.beta[:, asset] = model.coef_
+            r_squared[asset] = model.score(self.insample_signals, self.insample_returns[:, asset])
+
+        # Store R-squared values
+        self.r_squared = pd.Series(r_squared, index=self.asset_names)
+        print(f"Average R-squared across assets: {np.mean(r_squared):.4f}")
+
+# Example usage:
+if __name__ == "__main__":
+    # ... (other code remains the same)
+    analyzer.calculate_betas_elastic_net(alpha=0.1, l1_ratio=0.5)
+    analyzer.generate_report()        
     def calculate_betas(self) -> None:
         """Calculate beta coefficients using OLS regression"""
         print("\nCalculating beta coefficients...")
@@ -92,8 +115,7 @@ class SignalAnalyzer:
         predicted_returns = self.outsample_signals @ self.beta
         
         # Convert to weights using softmax
-        weights = np.exp(predicted_returns)
-        weights = weights / weights.sum(axis=1, keepdims=True)
+        weights = predicted_returns
         
         return weights, predicted_returns
         
