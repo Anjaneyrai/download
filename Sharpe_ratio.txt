@@ -66,23 +66,60 @@ class SignalAnalyzer:
             np.isnan(self.outsample_signals).any()):
             raise ValueError("Missing values detected in the data")
     from sklearn.linear_model import ElasticNet
-
-    def calculate_betas_elastic_net(self, alpha: float = 0.1, l1_ratio: float = 0.5) -> None:
-        """Calculate beta coefficients using Elastic Net Regression"""
+def calculate_betas_elastic_net(self, alpha_range=[0.0001, 0.001, 0.01], l1_ratio=0.5):
+        """
+        Calculate beta coefficients using Elastic Net Regression with cross-validation
+        for alpha selection
+        """
         print("\nCalculating beta coefficients using Elastic Net Regression...")
-
-        self.beta = np.zeros((self.insample_signals.shape[1], self.insample_returns.shape[1]))
-        r_squared = np.zeros(self.insample_returns.shape[1])
-
-        for asset in range(self.insample_returns.shape[1]):
-            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=False)
-            model.fit(self.insample_signals, self.insample_returns[:, asset])
-            self.beta[:, asset] = model.coef_
-            r_squared[asset] = model.score(self.insample_signals, self.insample_returns[:, asset])
-
-        # Store R-squared values
-        self.r_squared = pd.Series(r_squared, index=self.asset_names)
-        print(f"Average R-squared across assets: {np.mean(r_squared):.4f}")
+        
+        # Scale the signals
+        scaled_insample_signals = self.scaler.fit_transform(self.insample_signals)
+        
+        best_alpha = None
+        best_score = -np.inf
+        best_beta = None
+        
+        # Try different alpha values
+        for alpha in alpha_range:
+            current_beta = np.zeros((self.insample_signals.shape[1], self.insample_returns.shape[1]))
+            current_r_squared = np.zeros(self.insample_returns.shape[1])
+            
+            for asset in range(self.insample_returns.shape[1]):
+                model = ElasticNet(
+                    alpha=alpha,
+                    l1_ratio=l1_ratio,
+                    fit_intercept=True,  # Changed to True
+                    max_iter=10000,      # Increased max iterations
+                    tol=1e-4             # Adjusted tolerance
+                )
+                
+                # Fit the model
+                model.fit(scaled_insample_signals, self.insample_returns[:, asset])
+                current_beta[:, asset] = model.coef_
+                current_r_squared[asset] = model.score(scaled_insample_signals, self.insample_returns[:, asset])
+            
+            # Calculate average R-squared for this alpha
+            avg_r_squared = np.mean(current_r_squared)
+            
+            if avg_r_squared > best_score:
+                best_score = avg_r_squared
+                best_alpha = alpha
+                best_beta = current_beta
+        
+        self.beta = best_beta
+        self.r_squared = pd.Series(current_r_squared, index=self.asset_names)
+        
+        print(f"Best alpha: {best_alpha}")
+        print(f"Average R-squared across assets: {best_score:.4f}")
+        
+        # Print coefficient statistics
+        non_zero_coefs = np.sum(np.abs(self.beta) > 1e-10)
+        print(f"Number of non-zero coefficients: {non_zero_coefs}")
+        print(f"Average absolute coefficient value: {np.mean(np.abs(self.beta)):.6f}")
+        
+        # Store the scaler for later use with out-of-sample data
+        self.signal_scaler = self.scaler
 
 # Example usage:
 if __name__ == "__main__":
